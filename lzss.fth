@@ -11,18 +11,24 @@ only forth also definitions decimal
 : checked abort" file access error. " ;
 : closed close-file throw ;
 
-0 value infile 0 value     outfile
+variable in-file variable out-file
 create single-char-i/o-buffer 0 c, align
-: read-char ( file -- char ) 
+: read-char ( file -- char|-1 ) 
   single-char-i/o-buffer 1 rot read-file checked if
     single-char-i/o-buffer c@
   else -1 then ;
+: get in-file @ read-char ;
+: gets  in-file @ read-file checked ;
+: put 1 out-file @ write-file checked ;
+: puts out-file @ write-file checked ;
 
-4096 constant n         ( size of ring buffer )
+4096 constant n         ( size of ring buffer; must be power of 2 )
 18   constant f         ( upper limit for match-length )
 2    constant threshold ( encode string into position & length
                         ( if match-length is greater. )
 n    constant null      ( index for binary search tree root )
+
+: nwrap [ n 1- ] literal and ;
 
 variable textsize    ( text size counter )
 variable codesize    ( code size counter )
@@ -32,8 +38,11 @@ variable codesize    ( code size counter )
 variable match-position
 variable match-length
 
-n f + 1- carray text-buf   ( Ring buffer of size N, with extra
-                  ( F-1 bytes to facilitate string comparison. )
+create window n f + 1- chars allot
+: text-buf window swap chars + ;
+
+\ n f + 1- carray text-buf   ( Ring buffer of size N, with extra
+\                  ( F-1 bytes to facilitate string comparison. )
 
 ( Left & Right Children and Parents -- Binary Search Trees )
 
@@ -52,7 +61,7 @@ n 1+    array dad
 ( Initialize trees. )
 
 : init-tree                                ( -- )
-  n 257 + n 1+  do null i rson ! loop
+  n 257 + n 1+ do null i rson ! loop
   n for null r@ dad ! next ;
 
 ( Insert string of length F, text_buf[r..r+F-1], into one of the
@@ -64,7 +73,7 @@ n 1+    array dad
 
 : insert-node                              ( r -- )
   null over lson ! null over rson ! 0 match-length !
-  dup text-buf c@  n +  1+                 ( r p )
+  dup text-buf c@ n + 1+                   ( r p )
   1                                        ( r p cmp )
   begin                                    ( r p cmp )
     0< 0= if                               ( r p )
@@ -166,7 +175,7 @@ variable mask
   ( clear the buffer with any character that will appear often. )
   0 text-buf n f -  bl  fill
   ( read f bytes into the last f bytes of the buffer. )
-  dup text-buf f infile read-file checked   ( s r count)
+  dup text-buf f gets    ( s r count )
   dup len ! dup textsize !
   0= if exit then                     ( s r )
   ( insert the f strings, each of which begins with one or more
@@ -197,14 +206,14 @@ variable mask
     ( shift mask left one bit. )        ( . . )
     mask c@  2* mask c! mask c@ 0= if
       ( send at most 8 units of code together. )
-      0 code-buf  code-buf-ptr @    ( . . a k )
-      outfile write-file checked ( . . )
+      0 code-buf  code-buf-ptr @        ( . . a k )
+      puts                              ( . . )
       code-buf-ptr @  codesize +!
       0 0 code-buf c! 1 code-buf-ptr ! 1 mask c!
     then                                ( s r )
     match-length @ last-match-length !
     last-match-length @ dup 0 do        ( s r n )
-      infile read-char              ( s r n c )
+      get                               ( s r n c )
       dup 0< if 2drop i leave then
       ( delete old strings and read new bytes. )
       3 pick delete-node
@@ -216,9 +225,9 @@ variable mask
       ( since this is a ring buffer, increment the
       ( position modulo n. )
       >r >r                         ( s )
-      1+ n 1- and
+      1+ nwrap
       r>                            ( s r )
-      1+ n 1- and
+      1+ nwrap
       r>                            ( s r n )
       ( register the string in text_buf[r..r+f-1]. )
       over insert-node
@@ -228,15 +237,15 @@ variable mask
     ( buffer may not be empty. )
     last-match-length @ swap ?do        ( s r)
       over delete-node
-      >r 1+ n 1- and r>
-      1+ n 1- and
+      >r 1+ nwrap r>
+      1+ nwrap
       -1 len +! len @ if dup insert-node then
     loop
     len @ 0<=
   until 2drop
   ( send remaining code. )
   code-buf-ptr @ 1 > if
-    0 code-buf  code-buf-ptr @  outfile  write-file checked
+    0 code-buf code-buf-ptr @ puts 
     code-buf-ptr @ codesize +!
   then ;
 
@@ -257,43 +266,42 @@ variable mask
   begin
     >r                                ( flags )
     1 rshift dup 256 and 0= if drop   ( )
-      infile read-char                ( c )
+      get                             ( c )
       dup 0< if r> 2drop exit then    ( c )
-      $ff00 or                        ( flags )
+      $FF00 or                        ( flags )
       ( uses higher byte to count eight. )
     then
     r>                                ( flags r )
     over lsb if
-      infile read-char                ( . . c )
+      get                             ( . . c )
       dup 0< if drop 2drop exit then  ( . r c )
       over text-buf c!                ( . r )
-      dup text-buf 1 outfile write-file checked
-      1+ n 1- and
+      dup text-buf put
+      1+ nwrap
     else
-      infile read-char                ( . . i )
+      get                             ( . . i )
       dup 0< if drop 2drop exit then  ( . r c )
-      infile read-char                ( . . i j )
+      get                                ( . . i j )
       dup 0< if 2drop 2drop exit then ( . . i j )
       dup >r 4 rshift 8 lshift or r>
       15 and threshold + 1+
       0 ?do                           ( . r i )
-        dup i + n 1- and  text-buf    ( . r i a )
-        dup 1 outfile write-file checked
+        dup i + nwrap  text-buf       ( . r i a )
+        dup put
         c@  2 pick text-buf c!        ( . r i )
-        >r  1+  n 1- and  r>
+        >r 1+ nwrap r>
       loop                            ( . r i )
       drop                            ( flags r )
     then
   again ;
 
-S" lzss.fth"      r/o open-file throw to infile
-S" lzss.fth.lzss" w/o create-file throw to outfile
+S" lzss.fth"      r/o open-file throw in-file !
+S" lzss.fth.lzss" w/o create-file throw out-file !
 lzss-encode
-infile closed outfile closed
-S" lzss.fth.lzss" r/o open-file throw to infile
-S" lzss.fth.orig" w/o create-file throw to outfile
+in-file @ closed out-file @ closed
+S" lzss.fth.lzss" r/o open-file throw in-file !
+S" lzss.fth.orig" w/o create-file throw out-file !
 lzss-decode
-infile closed outfile closed
+in-file @ closed out-file @ closed
 stats
-
 bye
