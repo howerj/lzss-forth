@@ -11,8 +11,8 @@ version of the LZSS CODEC are based on appear to be in the public domain. This
 version of the Forth CODEC is designed to be used in constrained systems
 that may lack file I/O, and the niceties of larger Forth implementations.
 
-The new implementation of the LZSS CODEC is available in [lzss.fth][], and
-has been tested with <https://gforth.org/> version 0.7.3 under Linux.
+The new implementation of the LZSS CODEC is available in [lzss.fth](lzss.fth),
+and has been tested with <https://gforth.org/> version 0.7.3 under Linux.
 
 As with most Forth libraries you may have to modify the code to suite your
 purpose (and your Forth implementation). 
@@ -33,5 +33,5 @@ The original files can be obtained from here:
 * <ftp://ftp.taygeta.com/pub/Forth/Applications/ANS/lzss.fo>
 * <ftp://ftp.taygeta.com/pub/Forth/Applications/ANS/lzss.doc>
 
-But are also kept in the project as [lzss.fo][] and [lzss.doc][].
+But are also kept in the project as [lzss.fo](lzss.fo) and [lzss.doc](lzss.doc).
 

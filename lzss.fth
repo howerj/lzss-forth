@@ -3,6 +3,11 @@
 \ 94-12-09 Standard Forth by Wil Baden
 \ 21-02-20 Personalized Forth by Richard Howe
 \ Use, distribute, and modify this program freely.
+\ TODO:
+\ - Refactor so this is more "forth" like, this looks like it is translated
+\   from C.
+\ - Implement entirely memory only version
+\ - Separate encode from decode so they can be used independently
 
 only forth also definitions decimal
 
@@ -10,6 +15,36 @@ only forth also definitions decimal
 : carray create chars allot does> swap chars + ;
 : checked abort" file access error. " ;
 : closed close-file throw ;
+: slurp ( b-mem u-mem b-name u-name -- u )
+  r/o open-file throw dup >r read-file checked r> close-file throw ;
+: save ( b-mem u-mem b-name u-name -- )
+  w/o open-file throw dup >r write-file checked r> close-file throw ;
+
+32678 constant mem-sz
+variable in-mem mem-sz chars allot
+variable in-mem-used
+variable in-mem-index
+variable out-mem mem-sz chars allot
+variable out-mem-used
+variable out-mem-index
+
+: get ( -- char|-1 )
+   in-mem-index @ in-mem-used @ >= if -1 exit then
+   in-mem-index @ chars in-mem + c@ 1 in-mem-index +! ;
+: put
+  out-mem-index @ out-mem-used @ >= if drop -1 exit then
+  out-mem-used @ chars out-mem + c! 1 out-mem-index +! 0 ;
+: gets ( b u -- u )
+  0 >r
+  begin
+   ?dup
+  while
+   get dup 0< if drop 2drop r> exit then
+   over + c!
+   r> 1+ >r
+   +string
+  repeat drop r> ;
+: puts begin ?dup while over + c@ put checked +string repeat drop ; ( b u -- )
 
 variable in-file variable out-file
 create single-char-i/o-buffer 0 c, align
@@ -68,7 +103,7 @@ n 1+    array dad
   dup text-buf c@ n + 1+                   ( r p )
   1                                        ( r p cmp )
   begin                                    ( r p cmp )
-    0< 0= if                               ( r p )
+    0>= if                               ( r p )
       dup rson @ null = 0= if
       rson @
       else
@@ -95,7 +130,7 @@ n 1+    array dad
       dup match-length !
       f < 0=
       else
-        drop false
+        drop 0
     then                                   ( r p cmp flag )
   until                                    ( r p cmp )
   drop                                     ( r p )
@@ -162,7 +197,7 @@ variable mask
   1 mask c! 1 code-buf-ptr !
   0 n f -                ( s r )
   \ clear the buffer with any character that will appear often.
-  0 text-buf n f -  bl  fill
+  0 text-buf n f - bl fill
   \ read f bytes into the last f bytes of the buffer.
   dup text-buf f gets    ( s r count )
   dup len ! dup text-size !
@@ -279,6 +314,8 @@ variable mask
       drop                            ( flags r )
     then
   again ;
+
+in-mem mem-sz S" lzss.fth" slurp ." read> " . cr
 
 \ TODO: get rid of ?do...loop in decode, read 32KiB into buffer and use that
 S" lzss.fth"      r/o open-file throw in-file !
